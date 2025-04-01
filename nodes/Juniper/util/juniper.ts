@@ -185,7 +185,6 @@ function nodeToConfig(node: JuniperNode, indent: number): string {
 
 export interface DiffOptions {
 	ignoreProperties?: string[];
-	ignoreArrayOrder?: boolean;
 	maxDepth?: number;
 	currentPath?: string[];
 	absolutePath?: string[]; // New parameter to track absolute path through the AST
@@ -213,15 +212,10 @@ export interface JuniperDiff {
 export function diffAst(oldAst: JuniperNode, newAst: JuniperNode, options: DiffOptions = {}): JuniperDiff[] {
   const diffs: JuniperDiff[] = [];
   const {
-    ignoreProperties = ['loc', 'range'],
-    ignoreArrayOrder = false,
     maxDepth = Infinity,
     currentPath = [],
     absolutePath = [], // New parameter to track absolute path through the AST
   } = options;
-
-  // Helper function to check if a property should be ignored
-  const shouldIgnore = (prop: string) => ignoreProperties.includes(prop);
 
   // Helper to get node type
   const getNodeType = (node: JuniperNode) => node && typeof node === 'object' ? (node.type || 'Unknown') : typeof node;
@@ -279,107 +273,44 @@ export function diffAst(oldAst: JuniperNode, newAst: JuniperNode, options: DiffO
 
   // Handle arrays
   if (Array.isArray(oldAst) && Array.isArray(newAst)) {
-    if (ignoreArrayOrder) {
-      // When array order doesn't matter, try to match nodes by similarity
-      const matchedIndexes = new Set();
+    const maxLength = Math.max(oldAst.length, newAst.length);
 
-      // First pass: match nodes by similarity
-      for (let i = 0; i < oldAst.length; i++) {
-        const oldNode = oldAst[i];
-        let bestMatchIndex = -1;
-        let bestMatchScore = -1;
+		for (let i = 0; i < maxLength; i++) {
+			if (i >= oldAst.length) {
+				// New items added at the end
+				diffs.push({
+					type: 'add',
+					path: [...currentPath, i.toString()],
+					absolutePath: getAbsolutePath(newAst[i], i.toString()),
+					newValue: newAst[i],
+					nodeType: getNodeType(newAst[i])
+				});
+			} else if (i >= newAst.length) {
+				// Old items removed from the end
+				diffs.push({
+					type: 'remove',
+					path: [...currentPath, i.toString()],
+					absolutePath: getAbsolutePath(oldAst[i], i.toString()),
+					oldValue: oldAst[i],
+					nodeType: getNodeType(oldAst[i])
+				});
+			} else if (maxDepth !== 0) {
+				// Both items exist, compare them recursively
+				const nodePath = getAbsolutePath(oldAst[i], i.toString());
 
-        for (let j = 0; j < newAst.length; j++) {
-          if (matchedIndexes.has(j)) continue;
-
-          const similarityScore = calculateSimilarity(oldNode, newAst[j]);
-          if (similarityScore > bestMatchScore) {
-            bestMatchScore = similarityScore;
-            bestMatchIndex = j;
-          }
-        }
-
-        if (bestMatchIndex >= 0 && bestMatchScore > 0.7) { // 70% similarity threshold
-          matchedIndexes.add(bestMatchIndex);
-          // Recursively compare matched nodes for detailed differences
-          const nodePath = getAbsolutePath(oldNode, i.toString());
-
-          const childDiffs = diffAst(
-            oldNode,
-            newAst[bestMatchIndex],
-            {
-              ...options,
-              currentPath: [...currentPath, i.toString()],
-              absolutePath: nodePath,
-              maxDepth: maxDepth > 0 ? maxDepth - 1 : 0
-            }
-          );
-          diffs.push(...childDiffs);
-        } else {
-          // No good match found, old node was removed
-          diffs.push({
-            type: 'remove',
-            path: [...currentPath, i.toString()],
-            absolutePath: getAbsolutePath(oldNode, i.toString()),
-            oldValue: oldNode,
-            nodeType: getNodeType(oldNode)
-          });
-        }
-      }
-
-      // Find unmatched new nodes (additions)
-      for (let j = 0; j < newAst.length; j++) {
-        if (!matchedIndexes.has(j)) {
-          diffs.push({
-            type: 'add',
-            path: [...currentPath, j.toString()],
-            absolutePath: getAbsolutePath(newAst[j], j.toString()),
-            newValue: newAst[j],
-            nodeType: getNodeType(newAst[j])
-          });
-        }
-      }
-    } else {
-      // When array order matters, compare by index
-      const maxLength = Math.max(oldAst.length, newAst.length);
-
-      for (let i = 0; i < maxLength; i++) {
-        if (i >= oldAst.length) {
-          // New items added at the end
-          diffs.push({
-            type: 'add',
-            path: [...currentPath, i.toString()],
-            absolutePath: getAbsolutePath(newAst[i], i.toString()),
-            newValue: newAst[i],
-            nodeType: getNodeType(newAst[i])
-          });
-        } else if (i >= newAst.length) {
-          // Old items removed from the end
-          diffs.push({
-            type: 'remove',
-            path: [...currentPath, i.toString()],
-            absolutePath: getAbsolutePath(oldAst[i], i.toString()),
-            oldValue: oldAst[i],
-            nodeType: getNodeType(oldAst[i])
-          });
-        } else if (maxDepth !== 0) {
-          // Both items exist, compare them recursively
-          const nodePath = getAbsolutePath(oldAst[i], i.toString());
-
-          const childDiffs = diffAst(
-            oldAst[i],
-            newAst[i],
-            {
-              ...options,
-              currentPath: [...currentPath, i.toString()],
-              absolutePath: nodePath,
-              maxDepth: maxDepth > 0 ? maxDepth - 1 : 0
-            }
-          );
-          diffs.push(...childDiffs);
-        }
-      }
-    }
+				const childDiffs = diffAst(
+					oldAst[i],
+					newAst[i],
+					{
+						...options,
+						currentPath: [...currentPath, i.toString()],
+						absolutePath: nodePath,
+						maxDepth: maxDepth > 0 ? maxDepth - 1 : 0
+					}
+				);
+				diffs.push(...childDiffs);
+			}
+		}
 
     return diffs;
   }
@@ -391,8 +322,6 @@ export function diffAst(oldAst: JuniperNode, newAst: JuniperNode, options: DiffO
   ]);
 
   for (const prop of allProps) {
-    if (shouldIgnore(prop)) continue;
-
     if (!(prop in oldAst)) {
       // Property added
       diffs.push({
@@ -450,86 +379,6 @@ export function diffAst(oldAst: JuniperNode, newAst: JuniperNode, options: DiffO
   }
 
   return diffs;
-}
-
-/**
- * Calculate similarity score between two AST nodes
- * @param {Object} nodeA - First AST node
- * @param {Object} nodeB - Second AST node
- * @returns {number} - Similarity score between 0 and 1
- */
-function calculateSimilarity(nodeA: JuniperNode, nodeB: JuniperNode): number {
-  // Return 0 for completely different types
-  if (typeof nodeA !== typeof nodeB) return 0;
-  if (nodeA === null || nodeB === null) return nodeA === nodeB ? 1 : 0;
-  if (typeof nodeA !== 'object' || typeof nodeB !== 'object') return nodeA === nodeB ? 1 : 0;
-
-  // Different node types already indicate difference
-  if (nodeA.type !== nodeB.type) return 0.1; // Small baseline similarity for nodes of different types
-
-  // For arrays, calculate average similarity of elements
-  if (Array.isArray(nodeA) && Array.isArray(nodeB)) {
-    if (nodeA.length === 0 && nodeB.length === 0) return 1;
-    if (nodeA.length === 0 || nodeB.length === 0) return 0.3; // Some similarity for empty vs non-empty arrays
-
-    // If arrays are of vastly different sizes, they're probably not that similar
-    const lengthRatio = Math.min(nodeA.length, nodeB.length) / Math.max(nodeA.length, nodeB.length);
-    if (lengthRatio < 0.5) return 0.2 + (lengthRatio * 0.3); // Base similarity plus adjustment for length ratio
-
-    // Compare a subset of elements to avoid excessive computation
-    const maxComparisons = 5;
-    const comparisons = Math.min(maxComparisons, nodeA.length, nodeB.length);
-
-    let totalSimilarity = 0;
-    for (let i = 0; i < comparisons; i++) {
-      const indexA = Math.floor((i / comparisons) * nodeA.length);
-      const indexB = Math.floor((i / comparisons) * nodeB.length);
-      totalSimilarity += calculateSimilarity(nodeA[indexA], nodeB[indexB]);
-    }
-
-    return (0.5 + (0.5 * (totalSimilarity / comparisons))) * lengthRatio;
-  }
-
-  // For objects/nodes, compare properties
-  const propsA = Object.keys(nodeA).filter(p => p !== 'loc' && p !== 'range');
-  const propsB = Object.keys(nodeB).filter(p => p !== 'loc' && p !== 'range');
-
-  if (propsA.length === 0 && propsB.length === 0) return 1;
-  if (propsA.length === 0 || propsB.length === 0) return 0.3;
-
-  // Calculate property overlap
-  const commonProps = propsA.filter(p => propsB.includes(p));
-  const propOverlap = commonProps.length / Math.max(propsA.length, propsB.length);
-
-  // Check values of common properties
-  let valueSimilarity = 0;
-  if (commonProps.length > 0) {
-    // Select a subset of important properties to check
-    const keyProps = commonProps.filter(p =>
-      ['id', 'name', 'value', 'operator', 'key', 'kind', 'computed'].includes(p)
-    );
-
-    const propsToCheck = keyProps.length > 0 ? keyProps : commonProps.slice(0, 3);
-    let checkedProps = 0;
-
-    for (const prop of propsToCheck) {
-      checkedProps++;
-			// @ts-ignore
-      if (typeof nodeA[prop] !== 'object' && typeof nodeB[prop] !== 'object') {
-				// @ts-ignore
-        valueSimilarity += nodeA[prop] === nodeB[prop] ? 1 : 0;
-				// @ts-ignore
-      } else if (nodeA[prop] && nodeB[prop]) {
-        // For object properties, do a shallow similarity check
-        valueSimilarity += 0.5; // Partial credit for having the same structure
-      }
-    }
-
-    valueSimilarity = checkedProps > 0 ? valueSimilarity / checkedProps : 0;
-  }
-
-  // Weight: 50% property overlap, 50% value similarity (for important props)
-  return 0.5 * propOverlap + 0.5 * valueSimilarity;
 }
 
 export interface Interface {
