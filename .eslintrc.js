@@ -48,12 +48,6 @@ module.exports = {
 				'n8n-nodes-base/node-param-fixed-collection-type-unsorted-items': 'off',
 			},
 		},
-		{
-			files: ['./nodes/**/*.spec.ts'],
-			rules: {
-				'n8n-nodes-base/node-param-display-name-miscased': 'off'
-			},
-		},
 	],
 };
 
