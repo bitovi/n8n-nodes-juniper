@@ -199,8 +199,8 @@ export interface JuniperDiff {
 	type: string;
 	path: string[];
 	absolutePath: string[];
-	oldValue?: object;
-	newValue?: object;
+	oldValue?: object | string;
+	newValue?: object | string;
 	property?: any;
 	nodeType?: string;
 	oldType?: string;
@@ -402,7 +402,7 @@ export interface Interface {
 export function addInterfaceProp(
 	interfaces: Array<Interface>,
 	path: string[],
-	value?: object,
+	value?: object | string,
 ): Array<Interface> {
 	if (path[0] !== 'interfaces') return interfaces;
 

@@ -20,10 +20,10 @@ function findLoopOpportunities(diff: JuniperDiff[]) {
 	);
 }
 
-function convertToLoopBody(
+export function convertToLoopBody(
 	ast: JuniperNode,
 	variables: Record<string, object>,
-	reveredVariables: Record<string, object>,
+	reversedVariables: Record<string, string>,
 	currPath: string,
 ): JuniperNode {
 	const replaced = { ...ast };
@@ -32,10 +32,11 @@ function convertToLoopBody(
 		replaced.value = replaced.value
 			.split('.')
 			.map((value, index) => {
-				if (index === 0 && reveredVariables[value].toString() === 'interface.name')
-					return `{{${reveredVariables[value]}}}`;
-				if (index === 1 && reveredVariables[value].toString() === 'interface.unit.name')
-					return `{{${reveredVariables[value]}}}`;
+				if (!reversedVariables[value]) return value;
+				if (index === 0 && reversedVariables[value].toString() === 'interface.name')
+					return `{{${reversedVariables[value]}}}`;
+				if (index === 1 && reversedVariables[value].toString() === 'interface.unit.name')
+					return `{{${reversedVariables[value]}}}`;
 				return value;
 			})
 			.join('.');
@@ -47,14 +48,14 @@ function convertToLoopBody(
 		} else if (!currPath.startsWith('interface.')) {
 			// Check and replace `name` and `value` if found in variables
 			if (replaced.name) {
-				replaced.name = reveredVariables[replaced.name]
-					? `{{${reveredVariables[replaced.name]}}}`
+				replaced.name = reversedVariables[replaced.name]
+					? `{{${reversedVariables[replaced.name]}}}`
 					: replaced.name;
 			}
 
 			if (replaced.value) {
-				replaced.value = reveredVariables[replaced.value]
-					? `{{${reveredVariables[replaced.value]}}}`
+				replaced.value = reversedVariables[replaced.value]
+					? `{{${reversedVariables[replaced.value]}}}`
 					: replaced.value;
 			}
 		}
@@ -63,7 +64,7 @@ function convertToLoopBody(
 	// Recurse into children
 	if (Array.isArray(replaced.children)) {
 		replaced.children = replaced.children.map((child) =>
-			convertToLoopBody(child, variables, reveredVariables, `${currPath}.${child.name}`),
+			convertToLoopBody(child, variables, reversedVariables, `${currPath}.${child.name}`),
 		);
 	}
 
