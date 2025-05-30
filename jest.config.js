@@ -2,6 +2,6 @@ module.exports = {
   preset: "ts-jest",
   testEnvironment: "node",
   testMatch: [
-    "<rootDir>/**/*.(test|spec).(ts|js)",
+    "<rootDir>/nodes/**/*.(test|spec).(ts|js)",
   ],
 };
